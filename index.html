@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SkillCraft · Quantum Glass To‑Do</title>
+  <!--
+    1000x Advanced Premium Single‑File To‑Do App
+    - Glassmorphism + neon gradient borders + animated particles/orbs
+    - LocalStorage persistence, import/export JSON, undo (soft delete)
+    - Filters: All / Active / Completed / Overdue, search, sort
+    - Priority chips, due dates, inline edit, drag‑and‑drop reorder
+    - Keyboard shortcuts, toasts, reduced‑motion safe
+    - Dark mode toggle, settings dialog
+    - A11y: ARIA labels, focus styles, live regions
+  -->
+  <style>
+    :root {
+      /* === Premium Palette (Light) === */
+      --bg: #F8FAFC;                 /* Arctic Mist */
+      --surface: #FFFFFF;            /* Frost White */
+      --ink-1: #0F172A;              /* Deep Space */
+      --ink-2: #64748B;              /* Slate Ash */
+      --brand-1: #1E40AF;            /* Royal Indigo */
+      --brand-2: #06B6D4;            /* Electric Cyan */
+      --ok: #22C55E;                 /* Neo Green */
+      --warn: #FB7185;               /* Pulse Coral */
+      --amber: #F59E0B;
+
+      /* Glass */
+      --glass: rgba(255,255,255,.18);
+      --stroke: rgba(255,255,255,.38);
+      --blur: 18px;
+
+      /* Depth */
+      --shadow-1: 0 10px 30px rgba(15,23,42,.10);
+      --shadow-2: 0 24px 80px rgba(6,182,212,.18);
+
+      /* Radius & Motion */
+      --r-xl: 28px; --r-lg: 20px; --r-md: 14px; --r-sm: 10px;
+      --dur-fast: 140ms; --dur: 240ms; --dur-slow: 520ms;
+      --ease: cubic-bezier(.22,.61,.36,1);
+
+      /* Layout */
+      --w: min(980px, 92vw);
+      --header-h: 64px;
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #0F172A;                 /* Deep Navy */
+      --surface: #1E293B;            /* Charcoal Blue */
+      --ink-1: #E2E8F0;              /* Text Primary */
+      --ink-2: #94A3B8;              /* Text Secondary */
+      --brand-1: #1E40AF;
+      --brand-2: #38BDF8;            /* Sky Glow */
+      --glass: rgba(30,41,59,.38);
+      --stroke: rgba(148,163,184,.18);
+      --shadow-1: 0 10px 30px rgba(0,0,0,.38);
+      --shadow-2: 0 24px 80px rgba(0,0,0,.6);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Inter", "Poppins", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: var(--ink-1);
+      background: radial-gradient(1200px 800px at 8% 12%, color-mix(in oklab, var(--brand-2) 18%, transparent), transparent 60%),
+                  radial-gradient(1200px 800px at 92% 8%, color-mix(in oklab, var(--brand-1) 22%, transparent), transparent 60%),
+                  var(--bg);
+      overflow-x: hidden;
+    }
+
+    /* Particle canvas */
+    canvas.bg { position: fixed; inset: 0; z-index: -2; filter: blur(0.2px); opacity: .55; }
+
+    /* Animated orbs */
+    .orb { position: fixed; border-radius: 1000px; filter: blur(48px); z-index: -1; opacity: .6; animation: float var(--dur-slow) ease-in-out infinite alternate; }
+    .orb.a { width: 520px; height: 520px; left: -120px; top: 14vh; background: var(--brand-2); }
+    .orb.b { width: 640px; height: 640px; right: -160px; top: 6vh; background: var(--brand-1); animation-duration: 8s; }
+    .orb.c { width: 380px; height: 380px; left: 22vw; bottom: -120px; background: var(--ok); opacity: .32; animation-duration: 10s; }
+    @keyframes float { from { transform: translateY(-8px) } to { transform: translateY(8px) } }
+
+    /* Container */
+    .wrap { width: var(--w); margin-inline: auto; padding: 24px; display: grid; gap: 18px; }
+
+    header { height: var(--header-h); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; letter-spacing: .2px; }
+    .mark { width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); box-shadow: 0 8px 22px color-mix(in oklab, var(--brand-2) 35%, transparent), inset 0 0 0 1px rgba(255,255,255,.22); }
+    .subtitle { color: var(--ink-2); font-weight: 600; font-size: .9rem; }
+    .actions { display: flex; align-items: center; gap: 10px; }
+
+    .btn { position: relative; appearance: none; border: 0; border-radius: 16px; padding: 12px 16px; font-weight: 700; cursor: pointer; transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease); outline: none; }
+    .btn:active { transform: translateY(0) scale(.99); }
+    .btn-primary { color: #fff; background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); box-shadow: 0 10px 24px color-mix(in oklab, var(--brand-2) 30%, transparent), inset 0 0 0 1px rgba(255,255,255,.22); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 18px 36px color-mix(in oklab, var(--brand-2) 40%, transparent); }
+    .btn-ghost { background: transparent; color: var(--ink-1); border: 1px solid rgba(148,163,184,.28); backdrop-filter: blur(6px); }
+    .btn-ghost:hover { background: rgba(148,163,184,.14); }
+
+    .toggle { inline-size: 60px; block-size: 34px; border-radius: 999px; background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); position: relative; border: none; padding: 0; cursor: pointer; box-shadow: 0 8px 18px color-mix(in oklab, var(--brand-2) 30%, transparent); }
+    .toggle::after { content: ""; position: absolute; inset: 4px; width: 26px; height: 26px; border-radius: 999px; background: var(--surface); transform: translateX(0); transition: transform var(--dur-fast) var(--ease), background var(--dur-fast); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--stroke); }
+    [data-theme="dark"] .toggle::after { transform: translateX(26px); }
+
+    .card { background: var(--glass); border: 1px solid var(--stroke); backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur)); border-radius: var(--r-xl); box-shadow: var(--shadow-2); }
+
+    .hero { position: relative; overflow: hidden; padding: 28px; }
+    .hero h1 { margin: 0 0 6px; font-size: clamp(24px, 3vw, 40px); line-height: 1.15; }
+    .hero .lead { color: var(--ink-2); font-size: clamp(14px, 1.6vw, 18px); }
+    .shine { position: absolute; inset: -1px; background: radial-gradient(600px 140px at 10% -10%, rgba(255,255,255,.35), transparent 40%), radial-gradient(600px 140px at 90% -10%, rgba(255,255,255,.25), transparent 40%); pointer-events: none; mix-blend-mode: overlay; }
+
+    .grid { display: grid; gap: 18px; grid-template-columns: 1fr .9fr; }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+
+    /* Input composer */
+    .composer { padding: 18px; display: grid; gap: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 160px 130px; gap: 10px; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+    .field, .select, .date { padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(148,163,184,.26); background: color-mix(in oklab, var(--surface) 86%, transparent); color: var(--ink-1); }
+    .field::placeholder { color: color-mix(in oklab, var(--ink-2) 80%, transparent); }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(148,163,184,.26); background: color-mix(in oklab, var(--surface) 70%, transparent); font-weight: 700; }
+
+    /* List */
+    .list { padding: 14px; display: grid; gap: 10px; min-height: 180px; }
+    .empty { color: var(--ink-2); text-align: center; padding: 24px; }
+
+    .item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 12px; border-radius: var(--r-lg); background: color-mix(in oklab, var(--surface) 78%, transparent); border: 1px solid rgba(148,163,184,.24); box-shadow: var(--shadow-1); }
+    .item[draggable="true"] { cursor: grab; }
+    .item.dragging { opacity: .6; }
+    .checkbox { width: 22px; height: 22px; border-radius: 6px; border: 2px solid rgba(148,163,184,.5); display: grid; place-items: center; background: transparent; cursor: pointer; }
+    .checkbox.checked { border-color: var(--ok); background: color-mix(in oklab, var(--ok) 40%, transparent); }
+    .title { font-weight: 700; }
+    .meta { color: var(--ink-2); font-size: .9rem; display: flex; gap: 10px; flex-wrap: wrap; }
+    .tag { padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(148,163,184,.26); background: color-mix(in oklab, var(--surface) 70%, transparent); font-weight: 700; font-size: .8rem; }
+
+    .actions-row { display: flex; gap: 8px; }
+    .icon { border: 0; background: transparent; width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; cursor: pointer; color: var(--ink-1); border: 1px solid rgba(148,163,184,.26); }
+    .icon:hover { background: rgba(148,163,184,.14); }
+
+    .prio { padding: 4px 10px; border-radius: 999px; font-weight: 800; font-size: .75rem; }
+    .prio.low { color: var(--ink-1); border: 1px solid rgba(148,163,184,.26); }
+    .prio.med { background: color-mix(in oklab, var(--amber) 28%, transparent); border: 1px solid color-mix(in oklab, var(--amber) 45%, transparent); }
+    .prio.high { background: color-mix(in oklab, var(--warn) 28%, transparent); border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); }
+
+    .strike { text-decoration: line-through; opacity: .75; }
+    .overdue { color: var(--warn); font-weight: 800; }
+
+    /* Panel */
+    .panel { padding: 18px; display: grid; gap: 14px; }
+    .progress { position: relative; height: 10px; border-radius: 999px; background: rgba(148,163,184,.28); overflow: hidden; }
+    .progress > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--brand-1), var(--brand-2)); transition: width var(--dur) var(--ease); }
+
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filter { padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(148,163,184,.26); background: color-mix(in oklab, var(--surface) 76%, transparent); cursor: pointer; font-weight: 700; }
+    .filter.active { outline: 2px solid color-mix(in oklab, var(--brand-2) 60%, transparent); }
+
+    .util { display:flex; gap:10px; flex-wrap:wrap; }
+
+    dialog { border: 0; border-radius: var(--r-xl); width: min(720px, 92vw); background: var(--glass); border: 1px solid var(--stroke); backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur)); box-shadow: var(--shadow-2); color: var(--ink-1); }
+    dialog::backdrop { background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
+    .modal-body { padding: 18px 20px 22px; display: grid; gap: 12px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px; }
+
+    footer { text-align: center; color: var(--ink-2); font-size: .9rem; padding: 10px 0 18px; }
+
+    .toast { position: fixed; right: 18px; bottom: 18px; padding: 12px 14px; border-radius: var(--r-md); background: color-mix(in oklab, var(--surface) 86%, transparent); border: 1px solid rgba(148,163,184,.26); box-shadow: var(--shadow-1); opacity: 0; transform: translateY(10px); transition: all var(--dur) var(--ease); z-index: 100; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (prefers-reduced-motion: reduce) { .orb, .btn, .icon, .toast { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <canvas class="bg" id="bg"></canvas>
+  <div class="orb a"></div>
+  <div class="orb b"></div>
+  <div class="orb c"></div>
+
+  <div class="wrap" role="main">
+    <header>
+      <div class="brand" aria-label="SkillCraft Technology">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <div>SkillCraft Technology</div>
+          <div class="subtitle">Quantum Glass To‑Do</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-ghost btn" id="settingsBtn" aria-haspopup="dialog" aria-controls="settingsDialog">Settings</button>
+        <button class="btn-ghost btn" id="exportBtn">Export</button>
+        <label class="btn-ghost btn" for="importInput" style="cursor:pointer;">Import</label>
+        <input type="file" id="importInput" accept="application/json" style="display:none" />
+        <button class="toggle" id="themeToggle" aria-label="Toggle dark mode"></button>
+      </div>
+    </header>
+
+    <section class="hero card">
+      <div class="shine" aria-hidden="true"></div>
+      <h1>Plan with Clarity — Execute with Flow</h1>
+      <p class="lead">Futuristic, elegant, human‑centric task manager powered by premium glass UI, micro‑interactions, and thoughtful accessibility.</p>
+    </section>
+
+    <section class="grid">
+      <!-- Composer + List -->
+      <section class="card">
+        <div class="composer">
+          <div class="row">
+            <input id="title" class="field" placeholder="Task title — e.g. ‘Design landing page hero’" />
+            <select id="priority" class="select" title="Priority">
+              <option value="low">Low</option>
+              <option value="med" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+            <input id="due" class="date" type="datetime-local" />
+          </div>
+          <input id="desc" class="field" placeholder="Details (optional). Tip: add tags with # like #ui #clientA" />
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="addBtn">➕ Add Task</button>
+            <button class="btn btn-ghost" id="clearCompleted">Clear Completed</button>
+          </div>
+        </div>
+        <div class="list" id="list" aria-live="polite">
+          <div class="empty" id="empty">No tasks yet — your day is wide open ✨</div>
+        </div>
+      </section>
+
+      <!-- Panel -->
+      <aside class="panel card">
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <strong>Progress</strong>
+            <span id="counter" class="subtitle">0/0 done</span>
+          </div>
+          <div class="progress"><i id="bar"></i></div>
+        </div>
+
+        <div>
+          <strong>Filters</strong>
+          <div class="filters" id="filters">
+            <button class="filter active" data-filter="all">All</button>
+            <button class="filter" data-filter="active">Active</button>
+            <button class="filter" data-filter="completed">Completed</button>
+            <button class="filter" data-filter="overdue">Overdue</button>
+          </div>
+        </div>
+
+        <div>
+          <strong>Search & Sort</strong>
+          <input id="search" class="field" placeholder="Search title, description or #tag" />
+          <select id="sort" class="select" style="margin-top:8px;">
+            <option value="created_desc">Newest</option>
+            <option value="created_asc">Oldest</option>
+            <option value="due_asc">Due soon</option>
+            <option value="due_desc">Due last</option>
+            <option value="prio_desc">Priority high→low</option>
+            <option value="prio_asc">Priority low→high</option>
+          </select>
+        </div>
+
+        <div class="util">
+          <button class="btn btn-ghost" id="backupBtn">Backup JSON</button>
+          <button class="btn btn-ghost" id="restoreBtn">Restore JSON</button>
+          <button class="btn btn-ghost" id="undoBtn">Undo Delete</button>
+        </div>
+      </aside>
+    </section>
+
+    <footer>SkillCraft · Task 04 · Premium Quantum Glass · Accessibility‑first</footer>
+  </div>
+
+  <!-- Settings Modal -->
+  <dialog id="settingsDialog" aria-label="Settings">
+    <div class="modal-body">
+      <h3 style="margin:0 0 8px;">Settings</h3>
+      <div style="display:grid; gap:12px;">
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <span>Confirm before delete</span>
+          <input id="confirmDelete" type="checkbox" checked>
+        </label>
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <span>Sounds</span>
+          <input id="soundToggle" type="checkbox" checked>
+        </label>
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <span>Density</span>
+          <select id="density" class="select" style="width:140px;">
+            <option value="cozy" selected>Cozy</option>
+            <option value="compact">Compact</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelSettings">Cancel</button>
+      <button class="btn btn-primary" id="saveSettings">Save</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    // =================== Particle Background ===================
+    (function particles(){
+      const c = document.getElementById('bg');
+      const ctx = c.getContext('2d');
+      function resize(){ c.width = innerWidth; c.height = innerHeight; }
+      resize(); addEventListener('resize', resize);
+      const N = 80; const pts = Array.from({length:N}, () => ({
+        x: Math.random()*c.width, y: Math.random()*c.height,
+        vx: (Math.random()-.5)*0.5, vy: (Math.random()-.5)*0.5,
+        r: Math.random()*1.6+0.6
+      }));
+      function step(){
+        ctx.clearRect(0,0,c.width,c.height);
+        for(const p of pts){ p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>c.width) p.vx*=-1; if(p.y<0||p.y>c.height) p.vy*=-1; }
+        for(const p of pts){
+          ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+          const g = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
+          g.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue('--brand-2').trim());
+          g.addColorStop(1, 'transparent'); ctx.fillStyle = g; ctx.fill();
+        }
+        for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
+          const a=pts[i], b=pts[j]; const dx=a.x-b.x, dy=a.y-b.y, d=Math.hypot(dx,dy);
+          if(d<120){ ctx.globalAlpha = (120-d)/300; const grad = ctx.createLinearGradient(a.x,a.y,b.x,b.y); grad.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue('--brand-1').trim()); grad.addColorStop(1, getComputedStyle(document.documentElement).getPropertyValue('--brand-2').trim()); ctx.strokeStyle = grad; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.globalAlpha = 1; }
+        }
+        requestAnimationFrame(step);
+      }
+      step();
+    })();
+
+    // =================== Elements ===================
+    const $ = (s, p=document) => p.querySelector(s);
+    const $$ = (s, p=document) => [...p.querySelectorAll(s)];
+    const els = {
+      root: document.documentElement,
+      themeToggle: $('#themeToggle'),
+      settingsBtn: $('#settingsBtn'), settingsDialog: $('#settingsDialog'), saveSettings: $('#saveSettings'), cancelSettings: $('#cancelSettings'),
+      confirmDelete: $('#confirmDelete'), soundToggle: $('#soundToggle'), density: $('#density'),
+
+      title: $('#title'), desc: $('#desc'), due: $('#due'), prio: $('#priority'), addBtn: $('#addBtn'), clearCompleted: $('#clearCompleted'),
+      list: $('#list'), empty: $('#empty'),
+
+      counter: $('#counter'), bar: $('#bar'),
+
+      filters: $('#filters'), search: $('#search'), sort: $('#sort'),
+
+      exportBtn: $('#exportBtn'), importInput: $('#importInput'), backupBtn: $('#backupBtn'), restoreBtn: $('#restoreBtn'), undoBtn: $('#undoBtn'),
+
+      toast: $('#toast')
+    };
+
+    // =================== State ===================
+    const STORAGE_KEY = 'skillcraft-todos-v1';
+    const settingsKey = 'skillcraft-settings-v1';
+    let state = {
+      items: [],
+      filter: 'all',
+      search: '',
+      sort: 'created_desc',
+      settings: { confirmDelete: true, sound: true, density: 'cozy' },
+      lastDeleted: null
+    };
+
+    // =================== Utils ===================
+    const uid = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+    const tone = (freq=880, dur=0.09, vol=0.02)=>{ try{ if(!state.settings.sound) return; const a = new (window.AudioContext||window.webkitAudioContext)(); const o=a.createOscillator(); const g=a.createGain(); o.type='sine'; o.frequency.value=freq; o.connect(g); g.connect(a.destination); g.gain.value=vol; o.start(); setTimeout(()=>{o.stop(); a.close();}, dur*1000); }catch{}}
+    const showToast = (msg)=>{ els.toast.textContent = msg; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 1800); };
+    const save = ()=> localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+    const load = ()=> { try { state.items = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); } catch { state.items=[]; } };
+    const saveSettings = ()=> localStorage.setItem(settingsKey, JSON.stringify(state.settings));
+    const loadSettings = ()=> { try { Object.assign(state.settings, JSON.parse(localStorage.getItem(settingsKey)||'{}')); } catch {} };
+
+    function applyThemeStart(){
+      const saved = localStorage.getItem('skillcraft-theme');
+      if(saved) els.root.setAttribute('data-theme', saved);
+      else els.root.setAttribute('data-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    }
+
+    function applyDensity(){
+      document.body.style.setProperty('--r-lg', state.settings.density==='compact' ? '12px':'20px');
+      document.body.style.setProperty('--r-md', state.settings.density==='compact' ? '10px':'14px');
+    }
+
+    function fmtDate(v){ if(!v) return ''; try { return new Date(v).toLocaleString(); } catch { return v; } }
+    function isOverdue(item){ return !item.completed && item.due && new Date(item.due) < new Date(); }
+
+    // =================== CRUD ===================
+    function addItem(){
+      const title = els.title.value.trim();
+      if(!title){ showToast('Please enter a task title'); tone(220,.07); return; }
+      const desc = els.desc.value.trim();
+      const tags = [...title.matchAll(/#[\w-]+/g), ...desc.matchAll(/#[\w-]+/g)].map(m=>m[0].slice(1).toLowerCase());
+      const item = { id: uid(), title, desc, due: els.due.value || '', prio: els.prio.value, tags, completed: false, created: Date.now(), order: state.items.length };
+      state.items.push(item); save(); render();
+      els.title.value=''; els.desc.value=''; els.due.value=''; els.prio.value='med';
+      showToast('Task added'); tone(1046,.07);
+    }
+
+    function updateItem(id, patch){
+      const i = state.items.findIndex(x=>x.id===id); if(i<0) return;
+      state.items[i] = { ...state.items[i], ...patch };
+      // regenerate tags if title/desc changed
+      if('title' in patch || 'desc' in patch){
+        const {title, desc} = state.items[i];
+        state.items[i].tags = [...title.matchAll(/#[\w-]+/g), ...desc.matchAll(/#[\w-]+/g)].map(m=>m[0].slice(1).toLowerCase());
+      }
+      save(); render();
+    }
+
+    function deleteItem(id){
+      const i = state.items.findIndex(x=>x.id===id); if(i<0) return;
+      state.lastDeleted = state.items[i];
+      state.items.splice(i,1); save(); render(); showToast('Deleted. Click Undo to restore.');
+    }
+
+    function undoDelete(){ if(!state.lastDeleted) return; state.items.push(state.lastDeleted); state.lastDeleted=null; save(); render(); showToast('Restored'); }
+
+    // =================== Render ===================
+    function render(){
+      // Filter / search
+      let items = [...state.items];
+      if(state.filter==='active') items = items.filter(i=>!i.completed);
+      if(state.filter==='completed') items = items.filter(i=>i.completed);
+      if(state.filter==='overdue') items = items.filter(i=>isOverdue(i));
+      const q = state.search.toLowerCase().trim();
+      if(q){ items = items.filter(i=> i.title.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q) || i.tags.some(t=>('#'+t).includes(q))); }
+
+      // Sort
+      const prioRank = p=> ({low:0,med:1,high:2}[p]);
+      items.sort((a,b)=>{
+        switch(state.sort){
+          case 'created_asc': return a.created-b.created;
+          case 'created_desc': return b.created-a.created;
+          case 'due_asc': return (a.due||'').localeCompare(b.due||'');
+          case 'due_desc': return (b.due||'').localeCompare(a.due||'');
+          case 'prio_desc': return prioRank(b.prio)-prioRank(a.prio);
+          case 'prio_asc': return prioRank(a.prio)-prioRank(b.prio);
+          default: return a.order-b.order;
+        }
+      });
+
+      // DOM
+      els.list.innerHTML = '';
+      if(!items.length){ els.list.appendChild(els.empty); els.empty.style.display='block'; } else { els.empty.style.display='none'; }
+
+      for(const it of items){
+        const row = document.createElement('div');
+        row.className = 'item';
+        row.setAttribute('draggable','true');
+        row.dataset.id = it.id;
+
+        // drag events
+        row.addEventListener('dragstart', e=>{ row.classList.add('dragging'); e.dataTransfer.setData('text/plain', it.id); });
+        row.addEventListener('dragend', ()=> row.classList.remove('dragging'));
+        els.list.addEventListener('dragover', e=>{
+          e.preventDefault(); const after = getDragAfterElement(els.list, e.clientY); const id = e.dataTransfer?.getData('text/plain'); const el = $(`.item[data-id="${id}"]`); if(!el) return; if(after==null) els.list.appendChild(el); else els.list.insertBefore(el, after);
+        });
+        els.list.addEventListener('drop', ()=>{ // recompute order
+          [...els.list.querySelectorAll('.item')].forEach((n,idx)=>{ const iid = n.dataset.id; const obj = state.items.find(x=>x.id===iid); if(obj) obj.order = idx; }); save(); });
+
+        const checkbox = document.createElement('button');
+        checkbox.className = 'checkbox'+(it.completed?' checked':'');
+        checkbox.setAttribute('aria-label','Toggle complete');
+        checkbox.innerHTML = it.completed ? '✓' : '';
+        checkbox.addEventListener('click', ()=> updateItem(it.id, { completed: !it.completed }));
+
+        const body = document.createElement('div');
+        const title = document.createElement('div'); title.className = 'title'; title.textContent = it.title; if(it.completed) title.classList.add('strike');
+        const meta = document.createElement('div'); meta.className = 'meta';
+        const prio = document.createElement('span'); prio.className = 'prio '+it.prio; prio.textContent = it.prio.toUpperCase();
+        const due = document.createElement('span'); due.innerHTML = it.due? `📅 ${fmtDate(it.due)}` : '';
+        if(isOverdue(it)) due.classList.add('overdue');
+        const tags = document.createElement('span'); if(it.tags.length) tags.innerHTML = it.tags.map(t=>`<span class="tag">#${t}</span>`).join(' ');
+        meta.append(prio, due, tags);
+        const desc = document.createElement('div'); desc.className = 'subtitle'; desc.textContent = it.desc || '';
+        body.append(title, meta, desc);
+
+        const actions = document.createElement('div'); actions.className = 'actions-row';
+        const edit = iconBtn('✏','Edit',()=> inlineEdit(it, row));
+        const del = iconBtn('🗑','Delete',()=> tryDelete(it.id));
+        actions.append(edit, del);
+
+        row.append(checkbox, body, actions);
+        els.list.appendChild(row);
+      }
+
+      // progress
+      const total = state.items.length; const done = state.items.filter(i=>i.completed).length; els.counter.textContent = `${done}/${total} done`; els.bar.style.width = (total? (done/total*100):0) + '%';
+    }
+
+    function getDragAfterElement(container, y){
+      const els = [...container.querySelectorAll('.item:not(.dragging)')];
+      return els.reduce((closest, child)=>{
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height/2;
+        if(offset < 0 && offset > closest.offset){ return { offset, element: child }; } else { return closest; }
+      }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    function iconBtn(text, label, onClick){ const b = document.createElement('button'); b.className='icon'; b.textContent=text; b.title=label; b.setAttribute('aria-label',label); b.addEventListener('click', onClick); return b; }
+
+    function inlineEdit(it, row){
+      const titleEl = row.querySelector('.title');
+      const descEl = row.querySelector('.subtitle');
+      const meta = row.querySelector('.meta');
+      const editBox = document.createElement('div'); editBox.style.display='grid'; editBox.style.gap='8px';
+      const t = document.createElement('input'); t.className='field'; t.value = it.title; const d = document.createElement('input'); d.className='field'; d.value = it.desc; const due = document.createElement('input'); due.className='date'; due.type='datetime-local'; due.value = it.due; const pr = document.createElement('select'); pr.className='select'; pr.innerHTML='<option value="low">Low</option><option value="med">Medium</option><option value="high">High</option>'; pr.value=it.prio;
+      const saveBtn = document.createElement('button'); saveBtn.className='btn btn-primary'; saveBtn.textContent='Save';
+      const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-ghost'; cancelBtn.textContent='Cancel';
+      editBox.append(t,d,due,pr, saveBtn, cancelBtn);
+      row.replaceChild(editBox, row.children[1]);
+      saveBtn.addEventListener('click', ()=>{ updateItem(it.id, { title: t.value.trim()||it.title, desc: d.value.trim(), due: due.value, prio: pr.value }); });
+      cancelBtn.addEventListener('click', ()=> render());
+    }
+
+    function tryDelete(id){ if(!state.settings.confirmDelete) return deleteItem(id); if(confirm('Delete this task?')) deleteItem(id); }
+
+    // =================== Events ===================
+    // Theme
+    $('#themeToggle').addEventListener('click', ()=>{ const cur = els.root.getAttribute('data-theme'); const next = cur==='dark'?'light':'dark'; els.root.setAttribute('data-theme', next); localStorage.setItem('skillcraft-theme', next); });
+
+    // Settings
+    els.settingsBtn.addEventListener('click', ()=>{
+      els.confirmDelete.checked = !!state.settings.confirmDelete;
+      els.soundToggle.checked = !!state.settings.sound;
+      els.density.value = state.settings.density;
+      els.settingsDialog.showModal();
+    });
+    els.cancelSettings.addEventListener('click', ()=> els.settingsDialog.close());
+    els.saveSettings.addEventListener('click', ()=>{
+      state.settings.confirmDelete = els.confirmDelete.checked;
+      state.settings.sound = els.soundToggle.checked;
+      state.settings.density = els.density.value;
+      saveSettings(); applyDensity(); els.settingsDialog.close(); showToast('Settings saved');
+    });
+
+    // Inputs
+    els.addBtn.addEventListener('click', addItem);
+    ['title','desc'].forEach(id=> $("#"+id).addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); addItem(); }}));
+    els.clearCompleted.addEventListener('click', ()=>{ state.items = state.items.filter(i=>!i.completed); save(); render(); showToast('Cleared completed'); });
+
+    // Filters/search/sort
+    els.filters.addEventListener('click', (e)=>{ const b = e.target.closest('.filter'); if(!b) return; $$('.filter', els.filters).forEach(x=>x.classList.remove('active')); b.classList.add('active'); state.filter = b.dataset.filter; render(); });
+    els.search.addEventListener('input', ()=>{ state.search = els.search.value; render(); });
+    els.sort.addEventListener('change', ()=>{ state.sort = els.sort.value; render(); });
+
+    // Import/Export/Backup/Restore
+    els.exportBtn.addEventListener('click', ()=>{
+      const data = JSON.stringify(state.items, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'skillcraft-todos.json'; a.click(); URL.revokeObjectURL(url); showToast('Exported JSON');
+    });
+    els.importInput.addEventListener('change', async (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      const text = await file.text(); try { const data = JSON.parse(text); if(Array.isArray(data)){ state.items = data; save(); render(); showToast('Imported tasks'); } else { alert('Invalid JSON'); } } catch { alert('Invalid JSON'); }
+      e.target.value = '';
+    });
+    els.backupBtn.addEventListener('click', ()=>{ els.exportBtn.click(); });
+    els.restoreBtn.addEventListener('click', ()=> els.importInput.click());
+    els.undoBtn.addEventListener('click', undoDelete);
+
+    // Keyboard shortcuts
+    addEventListener('keydown', (e)=>{
+      if(e.target.matches('input, textarea, select')) return;
+      if(e.key==='n' || e.key==='N'){ e.preventDefault(); els.title.focus(); }
+      if(e.key==='f' || e.key==='F'){ e.preventDefault(); els.search.focus(); }
+    });
+
+    // =================== Init ===================
+    applyThemeStart();
+    loadSettings(); applyDensity();
+    load(); render();
+  </script>
+</body>
+</html>
